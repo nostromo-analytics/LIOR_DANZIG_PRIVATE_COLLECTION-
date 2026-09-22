@@ -43,6 +43,30 @@ html,body{height:100%;margin:0;background:#4e5565;color:#fff;
 .face.back{transform:rotateY(180deg)}
 .face .shade{position:absolute;inset:0;pointer-events:none}
 
+/* single-page (phone): the stack of already-turned pages at the spine */
+#stackL{position:absolute;top:0;left:0;height:100%;display:none;overflow:hidden;
+  border-radius:3px 0 0 3px;
+  background:linear-gradient(to right,#c7c1b2 0%,#e6e1d5 24%,#f7f4ec 72%,#fdfbf6 100%);
+  box-shadow:inset -3px 0 7px rgba(0,0,0,.20),0 10px 40px rgba(0,0,0,.45)}
+#stackL::after{content:'';position:absolute;inset:0;opacity:.7;
+  background:repeating-linear-gradient(to right,
+    rgba(88,78,58,.17) 0 1px,rgba(0,0,0,0) 1px 4px)}
+
+/* the bending leaf */
+#curlwrap{position:absolute;top:0;transform-style:preserve-3d;
+  pointer-events:none;z-index:90;display:none}
+.strip{position:absolute;left:0;top:0;overflow:hidden;background:#fff;
+  transform-origin:0 50%;will-change:transform}
+.strip>.sc{position:absolute;left:0;top:0;overflow:hidden}
+.strip>.sb{position:absolute;inset:0;display:none;
+  background:linear-gradient(to bottom,#f5f2ea,#e9e4d8)}
+.strip>.sp{position:absolute;inset:0;display:none;overflow:hidden;
+  transform:scaleX(-1);background:#fff}
+.strip>.sp>div{position:absolute;top:0;overflow:hidden}
+.strip>.sl{position:absolute;inset:0;pointer-events:none;background:rgba(0,0,0,0)}
+#curlshadow{position:absolute;top:0;height:100%;pointer-events:none;z-index:85;display:none;
+  background:linear-gradient(to right,rgba(0,0,0,.42),rgba(0,0,0,0))}
+
 /* controls */
 #bar{height:58px;flex:0 0 58px;background:#22262f;display:flex;align-items:center;
   gap:14px;padding:0 16px;font-size:13px;letter-spacing:.02em}
@@ -85,12 +109,15 @@ html,body{height:100%;margin:0;background:#4e5565;color:#fff;
     <div id="title">DNZ 2026 · Lior Danzig</div>
     <div id="viewport">
       <div id="book">
+        <div id="stackL"></div>
         <div class="slot" id="slotL"></div>
         <div class="slot" id="slotR"></div>
         <div id="leafwrap"><div id="leaf">
           <div class="face front" id="faceF"></div>
           <div class="face back" id="faceB"></div>
         </div></div>
+        <div id="curlshadow"></div>
+        <div id="curlwrap"></div>
       </div>
     </div>
     <button class="nav" id="prev" aria-label="Previous page">
@@ -144,7 +171,11 @@ function buildPage(idx){           /* idx = 1..NP ; 0 or >NP = blank */
       const [cl,ct,cw,ch] = e.c;
       const fullW = w / (cw || 1), fullH = h / (ch || 1);
       const im = document.createElement('img');
-      im.loading = 'lazy'; im.decoding = 'async'; im.alt = '';
+      /* Pages are built detached and cloned into the slots, and Chrome never
+         schedules the lazy load for such images: src is set but currentSrc
+         stays empty and no request is ever made, so every page past the
+         cover renders blank. It also silently defeated the warm-up below. */
+      im.loading = 'eager'; im.decoding = 'async'; im.alt = '';
       im.src = imgUrl(e.s);
       const bare = DATA.base + e.s;
       im.onerror = function(){ if(!this.dataset.f){ this.dataset.f=1; this.src = bare; }
@@ -194,6 +225,10 @@ const book = document.getElementById('book');
 const slotL = document.getElementById('slotL'), slotR = document.getElementById('slotR');
 const leafwrap = document.getElementById('leafwrap'), leaf = document.getElementById('leaf');
 const faceF = document.getElementById('faceF'), faceB = document.getElementById('faceB');
+const stackL = document.getElementById('stackL');
+const curlwrap = document.getElementById('curlwrap');
+const curlShadow = document.getElementById('curlshadow');
+const STACK = Math.round(PW*0.085);   /* width reserved for the turned-page stack */
 
 let spread = true;         /* two pages side by side */
 let cur = 1;               /* leftmost page currently shown (spread: even, or 1 for cover) */
@@ -214,14 +249,22 @@ function layout(){
     if (spread) sIdx = spreadOf(pIdx);        /* single -> spread */
     else pIdx = rightPageOf(sIdx) <= NP ? rightPageOf(sIdx) : leftPageOf(sIdx);
   }
-  const bw = spread ? PW*2 : PW;
+  const spine = spread ? PW : STACK;          /* x of the spine inside the book */
+  const bw = spread ? PW*2 : PW + STACK;
   book.style.width = bw+'px'; book.style.height = PH+'px';
   slotL.style.width = PW+'px'; slotL.style.height = PH+'px'; slotL.style.left = '0px';
   slotR.style.width = PW+'px'; slotR.style.height = PH+'px';
-  slotR.style.left = (spread ? PW : 0)+'px';
+  slotR.style.left = spine+'px';
   slotL.style.display = spread ? 'block' : 'none';
   leafwrap.style.width = PW+'px'; leafwrap.style.height = PH+'px';
-  leafwrap.style.left = (spread ? PW : 0)+'px';
+  leafwrap.style.left = spine+'px';
+  curlwrap.style.width = PW+'px'; curlwrap.style.height = PH+'px';
+  curlwrap.style.left = spine+'px';
+  curlShadow.style.left = spine+'px';
+  curlShadow.style.width = Math.round(PW*0.30)+'px';
+  stackL.style.width = STACK+'px';
+  stackL.style.display = spread ? 'none' : 'block';
+  if (!busy){ curlwrap.style.display='none'; curlShadow.style.display='none'; }
   const pad = spread ? 46 : 24;
   const k = Math.min((sw-pad*2)/bw, (sh-pad*2)/PH);
   vp.style.width = bw+'px'; vp.style.height = PH+'px';
@@ -278,42 +321,177 @@ function turnSpread(dir){
   const target = sIdx + dir;
   if (target < 0 || target > LAST_SPREAD) return;
   busy = true;
-  leafwrap.style.display = 'block';
-  let from, to;
+  leafwrap.style.display = 'none';
+  let from, to, frontIdx, backIdx;
   if (dir > 0){
-    setFace(faceF, rightPageOf(sIdx));
-    setFace(faceB, leftPageOf(target));
+    frontIdx = rightPageOf(sIdx); backIdx = leftPageOf(target);
     put(slotL, leftPageOf(sIdx));
     put(slotR, rightPageOf(target));
-    from = 0; to = -180;
+    from = 0; to = 1;
   } else {
-    setFace(faceF, rightPageOf(target));
-    setFace(faceB, leftPageOf(sIdx));
+    frontIdx = rightPageOf(target); backIdx = leftPageOf(sIdx);
     put(slotL, leftPageOf(target));
     put(slotR, rightPageOf(sIdx));
-    from = -180; to = 0;
+    from = 1; to = 0;
   }
-  animate(from, to, ()=>{ sIdx = target; leafwrap.style.display='none'; render(); busy=false; });
+  curlMode = 'spread';
+  fillStrips(frontIdx, backIdx);
+  curlwrap.style.display = 'block';
+  curlShadow.style.display = 'block';
+  animateCurl(from, to, ()=>{
+    curlwrap.style.display = 'none';
+    curlShadow.style.display = 'none';
+    sIdx = target; render(); busy = false;
+  });
+}
+
+/* ---------- single page: a sheet that bends like paper ----------
+   A flat 180deg flip about the spine swings the page clear off a phone
+   screen, because with one page showing there is nothing to the left to
+   land on - which is why the page appeared to vanish mid-turn. Instead the
+   sheet is sliced into vertical strips and bent over a cylinder: it bows
+   as it swings, so it always shows a lit, curved surface, and over the
+   second half it draws in towards the spine to come to rest as one more
+   leaf on the visible stack of turned pages. */
+const NSTRIP = 12;        /* vertical slices the sheet is bent through */
+const BOW    = 1.15;      /* radians the sheet bows at the peak of the turn */
+const BOW_SPREAD = 0.95;  /* a bound page across a spread is a little stiffer */
+const SHW    = Math.round(PW*0.30);
+let curlMode = 'single';
+const DEG    = 57.29577951;
+let strips = [], stripPage = null;
+const curlEndSh = (STACK*0.45)/PW;   /* arc the sheet shrinks to as it joins the stack */
+
+function smoothstep(a, b, x){
+  x = Math.max(0, Math.min(1, (x-a)/(b-a)));
+  return x*x*(3-2*x);
+}
+
+function buildStrips(){
+  curlwrap.textContent = '';
+  strips = [];
+  const w = PW / NSTRIP;
+  for (let i = 0; i < NSTRIP; i++){
+    const el = document.createElement('div');
+    el.className = 'strip';
+    el.style.width = (w + 0.7) + 'px';        /* hairline overlap hides seams */
+    el.style.height = PH + 'px';
+    const sc = document.createElement('div'); sc.className = 'sc';
+    sc.style.left = (-i*w)+'px'; sc.style.width = PW+'px'; sc.style.height = PH+'px';
+    const sb = document.createElement('div'); sb.className = 'sb';
+    const sp = document.createElement('div'); sp.className = 'sp';
+    const spi = document.createElement('div');
+    spi.style.left = (-(PW-(i+1)*w))+'px'; spi.style.width = PW+'px'; spi.style.height = PH+'px';
+    sp.appendChild(spi);
+    const sl = document.createElement('div'); sl.className = 'sl';
+    el.appendChild(sc); el.appendChild(sb); el.appendChild(sp); el.appendChild(sl);
+    curlwrap.appendChild(el);
+    strips.push({ el:el, content:sc, back:sb, page:sp, pageIn:spi, light:sl, s:i*w, w:w });
+  }
+}
+
+/* backIdx null -> the sheet's reverse is blank paper (single-page view);
+   otherwise it carries the page swinging into view (two-page view). */
+function fillStrips(idx, backIdx){
+  const key = idx+'|'+backIdx;
+  if (stripPage === key) return;
+  stripPage = key;
+  const src = page(idx);
+  const bsrc = (backIdx === null || backIdx === undefined) ? null : page(backIdx);
+  for (const st of strips){
+    st.content.textContent = '';
+    st.content.appendChild(src.cloneNode(true));
+    st.pageIn.textContent = '';
+    if (bsrc) st.pageIn.appendChild(bsrc.cloneNode(true));
+  }
+}
+
+/* t: 0 = sheet lying flat on the book, 1 = sheet settled onto the stack */
+function drawCurl(t){
+  t = Math.max(0, Math.min(1, t));
+  const two = (curlMode === 'spread');
+  const sw  = two ? t : Math.pow(t, 1.22);           /* linger on the printed side */
+  const phi = -Math.PI * sw;                         /* swing about the spine */
+  const bow = (two ? BOW_SPREAD : BOW) * Math.sin(Math.PI * t);  /* bulge, peaks mid-turn */
+  const sh  = two ? 1 : 1 - (1 - curlEndSh)*smoothstep(0.34, 1, t);  /* draw in to the stack */
+  const kap = Math.max(bow, 1e-4) / (PW*sh);         /* curvature of the bow  */
+  const R   = 1/kap;
+  const pd  = phi*DEG;
+  for (const st of strips){
+    const beta = kap * st.s * sh;
+    const x = R*Math.sin(beta), z = R*(1 - Math.cos(beta));
+    /* Lay each slice along its CHORD, not along the tangent at its leading
+       edge: on the tangent the far end lifts off the arc and consecutive
+       slices leave wedge-shaped gaps, which open into visible slats when the
+       sheet is near edge-on. On the chord they meet end to end on the curve. */
+    const dB = kap * st.w * sh;
+    st.el.style.transform =
+      'rotateY('+pd.toFixed(2)+'deg) translate3d('+x.toFixed(2)+'px,0,'+
+      z.toFixed(2)+'px) rotateY('+(-(beta + dB*0.5)*DEG).toFixed(2)+'deg) scaleX('+sh.toFixed(4)+')';
+    /* shade across each slice, not per slice: a flat tint per strip makes the
+       sheet read as faceted slats, so light the two edges and let the gradient
+       carry the curve between them - neighbours then meet at equal values. */
+    const b1 = beta + dB;
+    const c0 = Math.cos(phi - beta), c1 = Math.cos(phi - b1);
+    const cm = Math.cos(phi - (beta + b1)*0.5);        /* which face this slice shows */
+    let a0, a1;
+    if (cm >= 0){                                      /* printed side towards us */
+      st.back.style.display = 'none';
+      st.page.style.display = 'none';
+      st.content.style.visibility = 'visible';
+      a0 = 0.40*Math.pow(Math.max(0,1-c0),0.9);
+      a1 = 0.40*Math.pow(Math.max(0,1-c1),0.9);
+    } else {                                           /* swung over: reverse of the sheet */
+      st.back.style.display = two ? 'none' : 'block';
+      st.page.style.display = two ? 'block' : 'none';
+      st.content.style.visibility = 'hidden';
+      a0 = 0.62*Math.pow(Math.max(0,1+c0),0.85);
+      a1 = 0.62*Math.pow(Math.max(0,1+c1),0.85);
+    }
+    st.light.style.background = 'linear-gradient(to right,rgba(0,0,0,'+
+      a0.toFixed(3)+'),rgba(0,0,0,'+a1.toFixed(3)+'))';
+  }
+  /* the lifted sheet shades whichever page it is hanging over */
+  if (two && sw > 0.5){
+    curlShadow.style.left = (PW-SHW)+'px'; curlShadow.style.transform = 'scaleX(-1)';
+  } else {
+    curlShadow.style.left = (two ? PW : STACK)+'px'; curlShadow.style.transform = 'none';
+  }
+  curlShadow.style.opacity = (0.34*Math.sin(Math.PI*t)).toFixed(3);
+}
+
+function animateCurl(from, to, done){
+  const t0 = performance.now();
+  drawCurl(from);
+  function frame(t){
+    const u = Math.min(1, (t-t0)/DUR);
+    const e = u<.5 ? 2*u*u : 1-Math.pow(-2*u+2,2)/2;   /* easeInOutQuad */
+    drawCurl(from + (to-from)*e);
+    if (u<1) requestAnimationFrame(frame);
+    else done();
+  }
+  requestAnimationFrame(frame);
 }
 
 function turnSingle(dir){
   const target = pIdx + dir;
   if (target < 1 || target > NP) return;
   busy = true;
-  leafwrap.style.display = 'block';
-  let from, to;
-  if (dir > 0){
-    setFace(faceF, pIdx);
-    setFace(faceB, target);
-    put(slotR, target);
-    from = 0; to = -180;
-  } else {
-    setFace(faceF, target);
-    setFace(faceB, pIdx);
-    put(slotR, target);
-    from = -180; to = 0;
-  }
-  animate(from, to, ()=>{ pIdx = target; leafwrap.style.display='none'; render(); busy=false; });
+  leafwrap.style.display = 'none';
+  /* forward: this sheet swings over onto the stack, uncovering the target.
+     back:    the target sheet lifts off the stack and drops back into place. */
+  curlMode = 'single';
+  const leafPage = dir > 0 ? pIdx : target;
+  put(slotR, dir > 0 ? target : pIdx);
+  fillStrips(leafPage, null);
+  curlwrap.style.display = 'block';
+  curlShadow.style.display = 'block';
+  const from = dir > 0 ? 0 : 1, to = dir > 0 ? 1 : 0;
+  animateCurl(from, to, ()=>{
+    curlwrap.style.display = 'none';
+    curlShadow.style.display = 'none';
+    pIdx = target; render(); busy = false;
+  });
 }
 
 function animate(from, to, done){
@@ -396,11 +574,17 @@ stage.addEventListener('touchend', e=>{
   if (Math.abs(dx) > 45) turn(dx < 0 ? 1 : -1);
 });
 addEventListener('resize', ()=>{ layout(); if (gridBuilt) scaleThumbs(); });
+buildStrips();
 layout();
 leafwrap.style.display='none';
 
-/* warm up neighbouring images */
-setTimeout(()=>{ for(let i=1;i<=NP;i++) page(i); }, 400);
+/* Warm up the rest of the book. Spaced out rather than fired as one burst,
+   so a phone on cellular gets the page being read first and the rest trickle
+   in behind it instead of 30-odd requests contending at once. */
+setTimeout(()=>{
+  let i = 1;
+  (function step(){ if (i > NP) return; page(i++); setTimeout(step, 120); })();
+}, 400);
 </script>
 </body>
 </html>
